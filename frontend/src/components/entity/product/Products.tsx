@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { useQuery } from 'react-query';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../../api/config';
 import { useTheme } from '../../../context/ThemeContext';
+import { useCart } from '../../../context/CartContext';
 
 interface Product {
   productId: number;
@@ -26,8 +28,11 @@ export default function Products() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [addedToCart, setAddedToCart] = useState<number | null>(null);
   const { data: products, isLoading, error } = useQuery('products', fetchProducts);
   const { darkMode } = useTheme();
+  const { addItem } = useCart();
+  const navigate = useNavigate();
 
   const filteredProducts = products?.filter(product => 
     product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -41,15 +46,16 @@ export default function Products() {
     }));
   };
 
-  const handleAddToCart = (productId: number) => {
-    const quantity = quantities[productId] || 0;
+  const handleAddToCart = (product: Product) => {
+    const quantity = quantities[product.productId] || 0;
     if (quantity > 0) {
-      // TODO: Implement cart functionality
-      alert(`Added ${quantity} items to cart`);
+      addItem(product, quantity);
+      setAddedToCart(product.productId);
       setQuantities(prev => ({
         ...prev,
-        [productId]: 0
+        [product.productId]: 0
       }));
+      setTimeout(() => setAddedToCart(null), 2000);
     }
   };
 
@@ -169,17 +175,17 @@ export default function Products() {
                         </button>
                       </div>
                       <button 
-                        onClick={() => handleAddToCart(product.productId)}
+                        onClick={() => handleAddToCart(product)}
                         className={`px-4 py-2 rounded-lg transition-colors ${
                           quantities[product.productId] 
                             ? 'bg-primary hover:bg-accent text-white' 
                             : `${darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-500'} cursor-not-allowed`
-                        }`}
+                        } ${addedToCart === product.productId ? 'ring-2 ring-green-500' : ''}`}
                         disabled={!quantities[product.productId]}
                         aria-label={`Add ${quantities[product.productId] || 0} ${product.name} to cart`}
                         id={`add-to-cart-${product.productId}`}
                       >
-                        Add to Cart
+                        {addedToCart === product.productId ? '✓ Added' : 'Add to Cart'}
                       </button>
                     </div>
                   </div>
