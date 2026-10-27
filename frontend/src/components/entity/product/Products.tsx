@@ -210,7 +210,7 @@ export default function Products() {
             <p role="status" className={darkMode ? 'text-light' : 'text-gray-800'}>
               {filteredProducts.length} {filteredProducts.length === 1 ? 'product' : 'products'} found
             </p>
-            <button onClick={resetDiscovery} className="px-4 py-2 bg-primary hover:bg-accent text-white rounded-lg">
+            <button onClick={resetDiscovery} className="px-4 py-2 bg-primary hover:bg-accent text-gray-900 rounded-lg">
               Reset filters
             </button>
           </div>
