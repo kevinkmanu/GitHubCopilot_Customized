@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { useQuery } from 'react-query';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../../../api/config';
 import { useTheme } from '../../../context/ThemeContext';
 
@@ -21,18 +22,66 @@ const fetchProducts = async (): Promise<Product[]> => {
   return data;
 };
 
+const effectivePrice = (product: Product) =>
+  Number((product.price * (1 - (product.discount || 0))).toFixed(2));
+
+const discoveryParams = ['search', 'minPrice', 'maxPrice', 'discountedOnly', 'sort'];
+
 export default function Products() {
   const [quantities, setQuantities] = useState<Record<number, number>>({});
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchTerm = searchParams.get('search') || '';
+  const minPrice = searchParams.get('minPrice') || '';
+  const maxPrice = searchParams.get('maxPrice') || '';
+  const discountedOnly = searchParams.get('discountedOnly') === 'true';
+  const requestedSort = searchParams.get('sort') || '';
+  const sort = ['name', 'price-asc', 'price-desc'].includes(requestedSort) ? requestedSort : '';
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showModal, setShowModal] = useState(false);
   const { data: products, isLoading, error } = useQuery('products', fetchProducts);
   const { darkMode } = useTheme();
 
-  const filteredProducts = products?.filter(product => 
-    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const isValidPrice = (value: string) =>
+    value === '' || (/^\d*\.?\d+$/.test(value) && Number.isFinite(Number(value)));
+  const priceError = !isValidPrice(minPrice) || !isValidPrice(maxPrice)
+    ? 'Enter valid, non-negative prices.'
+    : minPrice !== '' && maxPrice !== '' && Number(minPrice) > Number(maxPrice)
+      ? 'Minimum price must not exceed maximum price.'
+      : '';
+  const filteredProducts = (products || []).filter(product => {
+    const matchesSearch = [product.name, product.description, product.sku]
+      .some(value => value.toLowerCase().includes(searchTerm.toLowerCase()));
+    const price = effectivePrice(product);
+    return matchesSearch &&
+      (!discountedOnly || (product.discount || 0) > 0) &&
+      (Boolean(priceError) || (
+        (minPrice === '' || price >= Number(minPrice)) &&
+        (maxPrice === '' || price <= Number(maxPrice))
+      ));
+  });
+  if (sort === 'name') {
+    filteredProducts.sort((a, b) => a.name.localeCompare(b.name));
+  } else if (sort === 'price-asc' || sort === 'price-desc') {
+    filteredProducts.sort((a, b) =>
+      (effectivePrice(a) - effectivePrice(b)) * (sort === 'price-asc' ? 1 : -1));
+  }
+
+  const updateParam = (key: string, value: string) => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      if (value) next.set(key, value);
+      else next.delete(key);
+      return next;
+    });
+  };
+  const resetDiscovery = () => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      discoveryParams.forEach(key => next.delete(key));
+      return next;
+    });
+  };
+  const inputClassName = `w-full min-w-0 px-4 py-2 ${darkMode ? 'bg-gray-800 text-light border-gray-700' : 'bg-white text-gray-800 border-gray-300'} rounded-lg border focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-colors duration-300`;
 
   const handleQuantityChange = (productId: number, change: number) => {
     setQuantities(prev => ({
@@ -91,7 +140,7 @@ export default function Products() {
               type="text"
               placeholder="Search products..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => updateParam('search', e.target.value)}
               className={`w-full px-4 py-2 ${darkMode ? 'bg-gray-800 text-light border-gray-700' : 'bg-white text-gray-800 border-gray-300'} rounded-lg border focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-colors duration-300`}
               aria-label="Search products"
             />
@@ -107,6 +156,69 @@ export default function Products() {
               <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
             </svg>
           </div>
+
+          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end ${darkMode ? 'text-light' : 'text-gray-800'}`}>
+            <label className="space-y-2">
+              <span>Minimum price</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={minPrice}
+                onChange={e => updateParam('minPrice', e.target.value)}
+                aria-invalid={Boolean(priceError)}
+                aria-describedby={priceError ? 'price-error' : undefined}
+                className={inputClassName}
+              />
+            </label>
+            <label className="space-y-2">
+              <span>Maximum price</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={maxPrice}
+                onChange={e => updateParam('maxPrice', e.target.value)}
+                aria-invalid={Boolean(priceError)}
+                aria-describedby={priceError ? 'price-error' : undefined}
+                className={inputClassName}
+              />
+            </label>
+            <label className="space-y-2">
+              <span>Sort by</span>
+              <select value={sort} onChange={e => updateParam('sort', e.target.value)} className={inputClassName}>
+                <option value="">Original order</option>
+                <option value="name">Name</option>
+                <option value="price-asc">Price: low to high</option>
+                <option value="price-desc">Price: high to low</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 py-2">
+              <input
+                type="checkbox"
+                checked={discountedOnly}
+                onChange={e => updateParam('discountedOnly', e.target.checked ? 'true' : '')}
+                className="accent-primary"
+              />
+              Discounted only
+            </label>
+          </div>
+          {priceError && (
+            <p id="price-error" role="alert" className={darkMode ? 'text-red-400' : 'text-red-700'}>
+              {priceError} Price filters are not applied until corrected.
+            </p>
+          )}
+          <div className="flex justify-between items-center gap-4">
+            <p role="status" className={darkMode ? 'text-light' : 'text-gray-800'}>
+              {filteredProducts.length} {filteredProducts.length === 1 ? 'product' : 'products'} found
+            </p>
+            <button onClick={resetDiscovery} className="px-4 py-2 bg-primary hover:bg-accent text-white rounded-lg">
+              Reset filters
+            </button>
+          </div>
+          {filteredProducts.length === 0 && (
+            <p className={`text-center py-8 ${darkMode ? 'text-light' : 'text-gray-800'}`}>
+              No products match your search and filters. Reset filters to see all products.
+            </p>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {filteredProducts?.map(product => (
