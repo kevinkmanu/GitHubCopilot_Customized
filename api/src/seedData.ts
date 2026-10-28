@@ -6,6 +6,13 @@ import { Order } from './models/order';
 import { OrderDetail } from './models/orderDetail';
 import { Delivery } from './models/delivery';
 import { OrderDetailDelivery } from './models/orderDetailDelivery';
+import { Coupon } from './models/coupon';
+
+// Coupons
+export const coupons: Coupon[] = [
+    { code: "SAVE5", discountRate: 0.05 },
+    { code: "SUMMER20", discountRate: 0.2, expiresAt: "2025-08-31" }
+];
 
 // Suppliers
 export const suppliers: Supplier[] = [
