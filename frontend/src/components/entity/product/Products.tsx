@@ -3,6 +3,8 @@ import axios from 'axios';
 import { useQuery } from 'react-query';
 import { api } from '../../../api/config';
 import { useTheme } from '../../../context/ThemeContext';
+import { useCart } from '../../../context/CartContext';
+import { roundCurrency } from '../../../context/cartUtils';
 
 interface Product {
   productId: number;
@@ -26,8 +28,10 @@ export default function Products() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [addedMessage, setAddedMessage] = useState('');
   const { data: products, isLoading, error } = useQuery('products', fetchProducts);
   const { darkMode } = useTheme();
+  const { addItem } = useCart();
 
   const filteredProducts = products?.filter(product => 
     product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -41,14 +45,22 @@ export default function Products() {
     }));
   };
 
-  const handleAddToCart = (productId: number) => {
-    const quantity = quantities[productId] || 0;
+  const handleAddToCart = (product: Product) => {
+    const quantity = quantities[product.productId] || 0;
     if (quantity > 0) {
-      // TODO: Implement cart functionality
-      alert(`Added ${quantity} items to cart`);
+      addItem(
+        {
+          productId: product.productId,
+          name: product.name,
+          imgName: product.imgName,
+          unitPrice: roundCurrency(product.price * (1 - (product.discount ?? 0))),
+        },
+        quantity
+      );
+      setAddedMessage(`Added ${quantity} ${product.name} to cart`);
       setQuantities(prev => ({
         ...prev,
-        [productId]: 0
+        [product.productId]: 0
       }));
     }
   };
@@ -83,6 +95,7 @@ export default function Products() {
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-dark' : 'bg-gray-100'} pt-20 pb-16 px-4 transition-colors duration-300`}>
       <div className="max-w-7xl mx-auto">
+        <div role="status" className="sr-only">{addedMessage}</div>
         <div className="flex flex-col space-y-6">
           <h1 className={`text-3xl font-bold ${darkMode ? 'text-light' : 'text-gray-800'} transition-colors duration-300`}>Products</h1>
           
@@ -169,7 +182,7 @@ export default function Products() {
                         </button>
                       </div>
                       <button 
-                        onClick={() => handleAddToCart(product.productId)}
+                        onClick={() => handleAddToCart(product)}
                         className={`px-4 py-2 rounded-lg transition-colors ${
                           quantities[product.productId] 
                             ? 'bg-primary hover:bg-accent text-white' 
