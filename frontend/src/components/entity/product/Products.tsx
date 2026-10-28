@@ -1,8 +1,17 @@
-import { useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useQuery } from 'react-query';
 import { api } from '../../../api/config';
 import { useTheme } from '../../../context/ThemeContext';
+import {
+  MAX_SEARCH_LENGTH,
+  SORT_OPTIONS,
+  filterAndSortProducts,
+  hasActiveFilters,
+  validatePrices,
+  type SortKey,
+} from './productDiscovery';
+import { useProductDiscovery } from './useProductDiscovery';
 
 interface Product {
   productId: number;
@@ -23,16 +32,29 @@ const fetchProducts = async (): Promise<Product[]> => {
 
 export default function Products() {
   const [quantities, setQuantities] = useState<Record<number, number>>({});
-  const [searchTerm, setSearchTerm] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showModal, setShowModal] = useState(false);
   const { data: products, isLoading, error } = useQuery('products', fetchProducts);
   const { darkMode } = useTheme();
+  const { filters, setSearch, setMin, setMax, setSale, setSort, reset } = useProductDiscovery();
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const filteredProducts = products?.filter(product => 
-    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.description.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredProducts = useMemo(
+    () => (products ? filterAndSortProducts(products, filters) : undefined),
+    [products, filters]
   );
+  const priceErrors = validatePrices(filters.min, filters.max);
+  const filtersActive = hasActiveFilters(filters);
+  const resultCount = filteredProducts?.length ?? 0;
+
+  const handleReset = () => {
+    reset();
+    searchInputRef.current?.focus();
+  };
+
+  const fieldClass = `w-full px-3 py-2 ${darkMode ? 'bg-gray-800 text-light border-gray-700' : 'bg-white text-gray-800 border-gray-300'} rounded-lg border focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-colors duration-300`;
+  const labelClass = `block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`;
+  const errorClass = `mt-1 text-sm ${darkMode ? 'text-red-400' : 'text-red-600'}`;
 
   const handleQuantityChange = (productId: number, change: number) => {
     setQuantities(prev => ({
@@ -86,27 +108,121 @@ export default function Products() {
         <div className="flex flex-col space-y-6">
           <h1 className={`text-3xl font-bold ${darkMode ? 'text-light' : 'text-gray-800'} transition-colors duration-300`}>Products</h1>
           
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search products..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className={`w-full px-4 py-2 ${darkMode ? 'bg-gray-800 text-light border-gray-700' : 'bg-white text-gray-800 border-gray-300'} rounded-lg border focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-colors duration-300`}
-              aria-label="Search products"
-            />
-            <svg 
-              className={`absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'} transition-colors duration-300`}
-              fill="none" 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              strokeWidth="2" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor"
-            >
-              <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-            </svg>
-          </div>
+          <form role="search" aria-label="Product filters" onSubmit={(e) => e.preventDefault()} className="space-y-4">
+            <div>
+              <label htmlFor="product-search" className={labelClass}>Search products</label>
+              <div className="relative">
+                <input
+                  id="product-search"
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Search products..."
+                  value={filters.search}
+                  maxLength={MAX_SEARCH_LENGTH}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className={`${fieldClass} pr-10`}
+                  aria-label="Search products"
+                />
+                <svg 
+                  aria-hidden="true"
+                  className={`absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'} transition-colors duration-300`}
+                  fill="none" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth="2" 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor"
+                >
+                  <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+              <div>
+                <label htmlFor="product-min-price" className={labelClass}>Min price ($)</label>
+                <input
+                  id="product-min-price"
+                  type="text"
+                  inputMode="decimal"
+                  value={filters.min}
+                  onChange={(e) => setMin(e.target.value)}
+                  className={fieldClass}
+                  aria-invalid={Boolean(priceErrors.min || priceErrors.range)}
+                  aria-describedby={priceErrors.min ? 'product-min-price-error' : priceErrors.range ? 'product-price-range-error' : undefined}
+                />
+                {priceErrors.min && <p id="product-min-price-error" role="alert" className={errorClass}>{priceErrors.min}</p>}
+              </div>
+              <div>
+                <label htmlFor="product-max-price" className={labelClass}>Max price ($)</label>
+                <input
+                  id="product-max-price"
+                  type="text"
+                  inputMode="decimal"
+                  value={filters.max}
+                  onChange={(e) => setMax(e.target.value)}
+                  className={fieldClass}
+                  aria-invalid={Boolean(priceErrors.max || priceErrors.range)}
+                  aria-describedby={priceErrors.max ? 'product-max-price-error' : priceErrors.range ? 'product-price-range-error' : undefined}
+                />
+                {priceErrors.max && <p id="product-max-price-error" role="alert" className={errorClass}>{priceErrors.max}</p>}
+              </div>
+              <div>
+                <label htmlFor="product-sort" className={labelClass}>Sort by</label>
+                <select
+                  id="product-sort"
+                  value={filters.sort}
+                  onChange={(e) => setSort(e.target.value as SortKey)}
+                  className={fieldClass}
+                >
+                  {SORT_OPTIONS.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-4 sm:pt-7">
+                <label htmlFor="product-sale-only" className={`flex items-center gap-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <input
+                    id="product-sale-only"
+                    type="checkbox"
+                    checked={filters.sale}
+                    onChange={(e) => setSale(e.target.checked)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  On sale only
+                </label>
+                {filtersActive && (
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="px-3 py-2 rounded-lg border border-primary text-primary hover:bg-primary hover:text-white transition-colors"
+                  >
+                    Clear all filters
+                  </button>
+                )}
+              </div>
+            </div>
+            {priceErrors.range && <p id="product-price-range-error" role="alert" className={errorClass}>{priceErrors.range}</p>}
+          </form>
+
+          <p role="status" aria-live="polite" className={darkMode ? 'text-gray-300' : 'text-gray-600'}>
+            {resultCount === 1 ? '1 product found' : `${resultCount} products found`}
+          </p>
+
+          {resultCount === 0 && (
+            <div className={`text-center py-12 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              <p className="text-lg mb-4">{filtersActive ? 'No products match your filters' : 'No products available'}</p>
+              {filtersActive && (
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="px-4 py-2 rounded-lg bg-primary hover:bg-accent text-white transition-colors"
+                >
+                  Clear all filters
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {filteredProducts?.map(product => (
